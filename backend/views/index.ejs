@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Books</title>
+</head>
+<body>
+    <h1>Saved Books</h1>
+
+    <% if (!book || book.length === 0) { %>
+      <p>No books found.</p>
+    <% } else { %>
+      <ul>
+        <% book.forEach((item) => { %>
+          <li>
+            <strong><%= item.title %></strong> by <%= item.author %> — <em><%= item.tag || '—' %></em>
+          </li>
+        <% }) %>
+      </ul>
+    <% } %>
+</body>
+</html>
