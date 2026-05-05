@@ -1,14 +1,21 @@
 const path = require('path');
 const fs = require('fs');
+const crypto = require('crypto');
 require('dotenv').config({ path: path.join(__dirname, '.env') });
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
 const multer = require('multer');
 const Book = require('./models/Book');
+const AdminCredential = require('./models/AdminCredential');
+const AdminSession = require('./models/AdminSession');
 const { ALLOWED_TAGS } = require('./constants/tags');
 const app = express();
 const mongoUrl = process.env.MONGO_URI;
+const DEFAULT_ADMIN_NAME = 'mma';
+const DEFAULT_ADMIN_PASSWORD = '123';
+const SESSION_COOKIE_NAME = 'admin_session';
+const SESSION_TTL_MS = 8 * 60 * 60 * 1000;
 
 const photosDir = path.join(__dirname, 'public', 'photos');
 const pdfsDir = path.join(__dirname, 'public', 'pdfs');
@@ -64,6 +71,42 @@ function unlinkUploadedFiles(files) {
     });
 }
 
+function hashSessionToken(token) {
+    return crypto.createHash('sha256').update(token).digest('hex');
+}
+
+function parseCookies(req) {
+    const raw = req.headers?.cookie || '';
+    return raw.split(';').reduce((acc, chunk) => {
+        const trimmed = chunk.trim();
+        if (!trimmed) return acc;
+        const eqIndex = trimmed.indexOf('=');
+        if (eqIndex < 0) return acc;
+        const key = trimmed.slice(0, eqIndex).trim();
+        const value = decodeURIComponent(trimmed.slice(eqIndex + 1));
+        acc[key] = value;
+        return acc;
+    }, {});
+}
+
+async function getSessionFromRequest(req) {
+    const cookies = parseCookies(req);
+    const token = cookies[SESSION_COOKIE_NAME];
+    if (!token) {
+        return null;
+    }
+    const tokenHash = hashSessionToken(token);
+    const session = await AdminSession.findOne({ tokenHash });
+    if (!session) {
+        return null;
+    }
+    if (new Date(session.expiresAt).getTime() <= Date.now()) {
+        await AdminSession.deleteOne({ _id: session._id });
+        return null;
+    }
+    return session;
+}
+
 async function ensureDatabaseConnection() {
     if (!mongoUrl) {
         throw new Error('Missing MONGO_URI in .env file');
@@ -77,9 +120,24 @@ async function ensureDatabaseConnection() {
     await mongoose.connect(mongoUrl);
 }
 
+async function ensureDefaultAdminCredential() {
+    const { salt, passwordHash } = AdminCredential.createPasswordRecord(DEFAULT_ADMIN_PASSWORD);
+    await AdminCredential.updateOne({
+        username: DEFAULT_ADMIN_NAME,
+    }, {
+        $setOnInsert: {
+            username: DEFAULT_ADMIN_NAME,
+            salt,
+            passwordHash,
+        },
+    }, {
+        upsert: true,
+    });
+}
+
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
-app.use(cors());
+app.use(cors({ origin: 'http://localhost:3000', credentials: true }));
 app.use('/photos', express.static(photosDir));
 app.use('/pdfs', express.static(pdfsDir));
 
@@ -127,6 +185,119 @@ app.get('/api/books/:id', async (req, res) => {
     } catch (err) {
         console.error('Failed to fetch single book API:', err.message);
         return res.status(500).json({ message: 'Failed to fetch book' });
+    }
+});
+
+app.post('/api/auth/login', async (req, res) => {
+    try {
+        await ensureDatabaseConnection();
+        const username = String(req.body?.username || '').trim().toLowerCase();
+        const password = String(req.body?.password || '');
+
+        if (!username || !password) {
+            return res.status(400).json({ message: 'Username and password are required' });
+        }
+
+        let credential = await AdminCredential.findOne({ username });
+        if (!credential && username === DEFAULT_ADMIN_NAME && password === DEFAULT_ADMIN_PASSWORD) {
+            const { salt, passwordHash } = AdminCredential.createPasswordRecord(DEFAULT_ADMIN_PASSWORD);
+            credential = await AdminCredential.create({
+                username: DEFAULT_ADMIN_NAME,
+                salt,
+                passwordHash,
+            });
+        }
+
+        if (!credential || !credential.verifyPassword(password)) {
+            return res.status(401).json({ message: 'Invalid username or password' });
+        }
+
+        const token = crypto.randomBytes(32).toString('hex');
+        const tokenHash = hashSessionToken(token);
+        const expiresAt = new Date(Date.now() + SESSION_TTL_MS);
+
+        await AdminSession.create({
+            username,
+            tokenHash,
+            expiresAt,
+        });
+
+        res.cookie(SESSION_COOKIE_NAME, token, {
+            httpOnly: true,
+            sameSite: 'lax',
+            secure: false,
+            maxAge: SESSION_TTL_MS,
+        });
+
+        return res.json({ message: 'Login successful' });
+    } catch (err) {
+        console.error('Failed to login:', err.message);
+        return res.status(500).json({ message: 'Failed to login' });
+    }
+});
+
+app.post('/api/auth/change-password', async (req, res) => {
+    try {
+        await ensureDatabaseConnection();
+        const session = await getSessionFromRequest(req);
+        if (!session) {
+            return res.status(401).json({ message: 'Unauthorized' });
+        }
+        const username = String(session.username || '').trim().toLowerCase();
+        const oldPassword = String(req.body?.oldPassword || '');
+        const newPassword = String(req.body?.newPassword || '');
+
+        if (!oldPassword || !newPassword) {
+            return res.status(400).json({ message: 'Old password and new password are required' });
+        }
+        if (newPassword.length < 3) {
+            return res.status(400).json({ message: 'New password must be at least 3 characters' });
+        }
+
+        const credential = await AdminCredential.findOne({ username });
+        if (!credential || !credential.verifyPassword(oldPassword)) {
+            return res.status(401).json({ message: 'Old password is incorrect' });
+        }
+
+        const { salt, passwordHash } = AdminCredential.createPasswordRecord(newPassword);
+        credential.salt = salt;
+        credential.passwordHash = passwordHash;
+        await credential.save();
+
+        return res.json({ message: 'Password changed successfully' });
+    } catch (err) {
+        console.error('Failed to change password:', err.message);
+        return res.status(500).json({ message: 'Failed to change password' });
+    }
+});
+
+app.get('/api/auth/session', async (req, res) => {
+    try {
+        await ensureDatabaseConnection();
+        const session = await getSessionFromRequest(req);
+        if (!session) {
+            return res.status(401).json({ message: 'Unauthorized' });
+        }
+        return res.json({ username: session.username });
+    } catch (err) {
+        console.error('Failed to check session:', err.message);
+        return res.status(500).json({ message: 'Failed to check session' });
+    }
+});
+
+app.post('/api/auth/logout', async (req, res) => {
+    try {
+        await ensureDatabaseConnection();
+        const cookies = parseCookies(req);
+        const token = cookies[SESSION_COOKIE_NAME];
+        if (token) {
+            await AdminSession.deleteOne({ tokenHash: hashSessionToken(token) });
+        }
+        res.clearCookie(SESSION_COOKIE_NAME, { httpOnly: true, sameSite: 'lax', secure: false });
+        return res.json({ message: 'Logged out' });
+    } catch (err) {
+        console.error('Failed to logout:', err.message);
+        return res.status(500).json({ message: 'Failed to logout' });
     }
 });
 
@@ -229,6 +400,7 @@ app.use((req,res)=>{
 async function startServer() {
     try {
         await ensureDatabaseConnection();
+        await ensureDefaultAdminCredential();
         console.log('Connected to MongoDB');
 
         app.listen(3001, () => {
