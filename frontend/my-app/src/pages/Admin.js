@@ -3,6 +3,7 @@ import Adding_post from "../components/Adding_post";
 import { tagLabel } from "../bookTags";
 import Change_pw from "../components/Change_pw";
 import { useNavigate } from "react-router-dom";
+import { apiUrl } from "../api";
 const PAGE_SIZE = 8;
 const glassBoxStyle = {
   background: "rgba(255, 255, 255, 0.18)",
@@ -50,7 +51,7 @@ export default function Admin() {
   useEffect(() => {
     const checkSession = async () => {
       try {
-        const response = await fetch("http://localhost:3001/api/auth/session", {
+        const response = await fetch(apiUrl("/api/auth/session"), {
           credentials: "include",
         });
         if (!response.ok) {
@@ -67,7 +68,7 @@ export default function Admin() {
 
   const refetchBooks = async () => {
     try {
-      const response = await fetch("http://localhost:3001/api/books?tag=all");
+      const response = await fetch(apiUrl("/api/books?tag=all"));
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}`);
       }
@@ -81,7 +82,7 @@ export default function Admin() {
    
   const delBook = async (id) => {
     try {
-      const response = await fetch(`http://localhost:3001/api/books/${id}`, {
+      const response = await fetch(apiUrl(`/api/books/${id}`), {
         method: "DELETE",
       });
       if (!response.ok) {
@@ -100,7 +101,7 @@ export default function Admin() {
 
     const fetchBooks = async () => {
       try {
-        const response = await fetch("http://localhost:3001/api/books");
+        const response = await fetch(apiUrl("/api/books"));
         if (!response.ok) {
           throw new Error(`HTTP ${response.status}`);
         }
@@ -118,7 +119,7 @@ export default function Admin() {
   }, [isAuthorized]);
 
   const handleLogout = () => {
-    fetch("http://localhost:3001/api/auth/logout", {
+    fetch(apiUrl("/api/auth/logout"), {
       method: "POST",
       credentials: "include",
     }).finally(() => navigate("/"));

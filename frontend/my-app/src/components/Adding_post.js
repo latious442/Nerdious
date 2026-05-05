@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { TAG_FORM_OPTIONS } from '../bookTags';
-
-const API_ORIGIN = 'http://localhost:3001';
+import { apiUrl } from '../api';
 
 export default function Adding_post({ onSuccess ,handleClose}) {
   const [form, setForm] = useState({
@@ -36,7 +35,7 @@ export default function Adding_post({ onSuccess ,handleClose}) {
     }
 
     try {
-      const res = await fetch(`${API_ORIGIN}/books`, {
+      const res = await fetch(apiUrl('/books'), {
         method: 'POST',
         body: fd,
       });

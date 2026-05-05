@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import Card from './Card';
 import { tagLabel } from '../bookTags';
+import { apiUrl } from '../api';
 
 const PAGE_SIZE = 8;
 
@@ -30,7 +31,7 @@ export default function Body({ onInfoClick, tagFilter = 'all', searchTerm = '' }
       try {
         setLoading(true);
         const q = tagFilter && tagFilter !== 'all' ? `?tag=${encodeURIComponent(tagFilter)}` : '';
-        const response = await fetch(`http://localhost:3001/api/books${q}`);
+        const response = await fetch(apiUrl(`/api/books${q}`));
         if (!response.ok) {
           throw new Error(`HTTP ${response.status}`);
         }

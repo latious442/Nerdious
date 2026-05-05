@@ -1,12 +1,11 @@
 import React from 'react'
 import 'bootstrap-icons/font/bootstrap-icons.css'
 import { tagLabel } from '../bookTags';
-
-const API_ORIGIN = 'http://localhost:3001';
+import { apiUrl } from '../api';
 
 export default function Card({ onInfoClick, book, className = '' }) {
   const coverSrc = book.photo
-    ? `${API_ORIGIN}/photos/${encodeURIComponent(book.photo)}`
+    ? apiUrl(`/photos/${encodeURIComponent(book.photo)}`)
     : '/photos/romeo.jpg';
 
   return (
@@ -45,7 +44,7 @@ export default function Card({ onInfoClick, book, className = '' }) {
             {book.pdf ? (
               <a
                 className="btn btn-outline-primary btn-sm rounded-pill"
-                href={`${API_ORIGIN}/download/pdf/${encodeURIComponent(book.pdf)}`}
+                href={apiUrl(`/download/pdf/${encodeURIComponent(book.pdf)}`)}
                 download
                 title="Download PDF"
               >

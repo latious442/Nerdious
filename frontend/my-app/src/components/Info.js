@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import { tagLabel } from '../bookTags';
-
-const API_ORIGIN = 'http://localhost:3001';
+import { apiUrl } from '../api';
 
 export default function Info({ onCloseClick, bookId }) {
   const [book, setBook] = useState(null);
@@ -18,7 +17,7 @@ export default function Info({ onCloseClick, bookId }) {
 
       try {
         setLoading(true);
-        const response = await fetch(`http://localhost:3001/api/books/${bookId}`);
+        const response = await fetch(apiUrl(`/api/books/${bookId}`));
         if (!response.ok) {
           throw new Error(`HTTP ${response.status}`);
         }
@@ -48,11 +47,11 @@ export default function Info({ onCloseClick, bookId }) {
   }
 
   const coverSrc = book.photo
-    ? `${API_ORIGIN}/photos/${encodeURIComponent(book.photo)}`
+    ? apiUrl(`/photos/${encodeURIComponent(book.photo)}`)
     : '/photos/romeo.jpg';
 
   const pdfDownloadUrl = book.pdf
-    ? `${API_ORIGIN}/download/pdf/${encodeURIComponent(book.pdf)}`
+    ? apiUrl(`/download/pdf/${encodeURIComponent(book.pdf)}`)
     : null;
 
   return (

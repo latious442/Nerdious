@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom';
+import { apiUrl } from '../api';
 
 export default function Identity() {
   const navigate = useNavigate();
@@ -9,7 +10,7 @@ export default function Identity() {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
-    fetch('http://localhost:3001/api/auth/logout', {
+    fetch(apiUrl('/api/auth/logout'), {
       method: 'POST',
       credentials: 'include',
     }).catch(() => {});
@@ -20,7 +21,7 @@ export default function Identity() {
     setIsSubmitting(true);
     setError('');
     try {
-      const response = await fetch('http://localhost:3001/api/auth/login', {
+      const response = await fetch(apiUrl('/api/auth/login'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',

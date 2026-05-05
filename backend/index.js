@@ -12,10 +12,12 @@ const AdminSession = require('./models/AdminSession');
 const { ALLOWED_TAGS } = require('./constants/tags');
 const app = express();
 const mongoUrl = process.env.MONGO_URI;
+const clientOrigin = process.env.CLIENT_ORIGIN || 'http://localhost:3000';
 const DEFAULT_ADMIN_NAME = 'mma';
 const DEFAULT_ADMIN_PASSWORD = '123';
 const SESSION_COOKIE_NAME = 'admin_session';
 const SESSION_TTL_MS = 8 * 60 * 60 * 1000;
+const isProduction = process.env.NODE_ENV === 'production';
 
 const photosDir = path.join(__dirname, 'public', 'photos');
 const pdfsDir = path.join(__dirname, 'public', 'pdfs');
@@ -25,21 +27,8 @@ fs.mkdirSync(pdfsDir, { recursive: true });
 const maxImageBytes = 5 * 1024 * 1024;
 const maxPdfBytes = 40 * 1024 * 1024;
 
-const storage = multer.diskStorage({
-    destination: (_req, file, cb) => {
-        if (file.fieldname === 'pdf') {
-            return cb(null, pdfsDir);
-        }
-        return cb(null, photosDir);
-    },
-    filename: (_req, file, cb) => {
-        const ext = path.extname(file.originalname) || (file.fieldname === 'pdf' ? '.pdf' : '.jpg');
-        cb(null, `${Date.now()}-${Math.round(Math.random() * 1e9)}${ext}`);
-    },
-});
-
 const upload = multer({
-    storage,
+    storage: multer.memoryStorage(),
     limits: { fileSize: maxPdfBytes },
     fileFilter: (_req, file, cb) => {
         if (file.fieldname === 'photo') {
@@ -62,13 +51,79 @@ const upload = multer({
 ]);
 
 function unlinkUploadedFiles(files) {
-    if (!files) return;
-    ['photo', 'pdf'].forEach((key) => {
-        const entry = files[key]?.[0];
-        if (entry?.path) {
-            fs.unlink(entry.path, () => {});
-        }
+    return files;
+}
+
+function getCookieOptions() {
+    return {
+        httpOnly: true,
+        sameSite: isProduction ? 'none' : 'lax',
+        secure: isProduction,
+        maxAge: SESSION_TTL_MS,
+    };
+}
+
+function getGridFSBucket() {
+    return new mongoose.mongo.GridFSBucket(mongoose.connection.db, { bucketName: 'uploads' });
+}
+
+function createUploadFilename(file, fallbackExt) {
+    const ext = path.extname(file.originalname || '') || fallbackExt;
+    return `${Date.now()}-${Math.round(Math.random() * 1e9)}${ext}`;
+}
+
+async function uploadFileToGridFS(file, fallbackExt) {
+    if (!file) {
+        return '';
+    }
+
+    const filename = createUploadFilename(file, fallbackExt);
+    const bucket = getGridFSBucket();
+
+    await new Promise((resolve, reject) => {
+        const stream = bucket.openUploadStream(filename, {
+            contentType: file.mimetype,
+            metadata: {
+                originalName: file.originalname,
+                fieldname: file.fieldname,
+            },
+        });
+        stream.once('finish', resolve);
+        stream.once('error', reject);
+        stream.end(file.buffer);
     });
+
+    return filename;
+}
+
+async function streamGridFSFile(filename, res, options = {}) {
+    const safe = path.basename(filename);
+    const file = await mongoose.connection.db.collection('uploads.files').findOne({ filename: safe });
+    if (!file) {
+        return false;
+    }
+
+    if (file.contentType) {
+        res.type(file.contentType);
+    }
+    if (options.download) {
+        res.setHeader('Content-Disposition', `attachment; filename="${safe.replace(/"/g, '')}"`);
+    }
+
+    const bucket = getGridFSBucket();
+    bucket.openDownloadStreamByName(safe).pipe(res);
+    return true;
+}
+
+async function deleteGridFSFile(filename) {
+    if (!filename) {
+        return;
+    }
+    const safe = path.basename(filename);
+    const file = await mongoose.connection.db.collection('uploads.files').findOne({ filename: safe });
+    if (file?._id) {
+        await getGridFSBucket().delete(file._id);
+    }
 }
 
 function hashSessionToken(token) {
@@ -137,7 +192,7 @@ async function ensureDefaultAdminCredential() {
 
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
-app.use(cors({ origin: 'http://localhost:3000', credentials: true }));
+app.use(cors({ origin: clientOrigin, credentials: true }));
 app.use('/photos', express.static(photosDir));
 app.use('/pdfs', express.static(pdfsDir));
 
@@ -222,12 +277,7 @@ app.post('/api/auth/login', async (req, res) => {
             expiresAt,
         });
 
-        res.cookie(SESSION_COOKIE_NAME, token, {
-            httpOnly: true,
-            sameSite: 'lax',
-            secure: false,
-            maxAge: SESSION_TTL_MS,
-        });
+        res.cookie(SESSION_COOKIE_NAME, token, getCookieOptions());
 
         return res.json({ message: 'Login successful' });
     } catch (err) {
@@ -293,7 +343,7 @@ app.post('/api/auth/logout', async (req, res) => {
         if (token) {
             await AdminSession.deleteOne({ tokenHash: hashSessionToken(token) });
         }
-        res.clearCookie(SESSION_COOKIE_NAME, { httpOnly: true, sameSite: 'lax', secure: false });
+        res.clearCookie(SESSION_COOKIE_NAME, getCookieOptions());
         return res.json({ message: 'Logged out' });
     } catch (err) {
         console.error('Failed to logout:', err.message);
@@ -321,13 +371,16 @@ app.post('/books', upload, async (req, res) => {
             return res.status(400).json({ message: 'Choose a valid book tag' });
         }
 
+        const photo = await uploadFileToGridFS(photoFile, '.jpg');
+        const pdf = await uploadFileToGridFS(pdfFile, '.pdf');
+
         const result = await Book.create({
             title,
             author,
             description,
             tag: tagNormalized,
-            photo: photoFile ? photoFile.filename : '',
-            pdf: pdfFile ? pdfFile.filename : '',
+            photo,
+            pdf,
         });
 
         return res.status(201).json(result);
@@ -338,16 +391,51 @@ app.post('/books', upload, async (req, res) => {
     }
 });
 
+app.get('/photos/:filename', async (req, res) => {
+    try {
+        await ensureDatabaseConnection();
+        const streamed = await streamGridFSFile(req.params.filename, res);
+        if (!streamed) {
+            return res.status(404).json({ message: 'Photo not found' });
+        }
+    } catch (err) {
+        console.error('Failed to fetch photo:', err.message);
+        return res.status(500).json({ message: 'Failed to fetch photo' });
+    }
+});
+
+app.get('/pdfs/:filename', async (req, res) => {
+    try {
+        await ensureDatabaseConnection();
+        const streamed = await streamGridFSFile(req.params.filename, res);
+        if (!streamed) {
+            return res.status(404).json({ message: 'PDF not found' });
+        }
+    } catch (err) {
+        console.error('Failed to fetch PDF:', err.message);
+        return res.status(500).json({ message: 'Failed to fetch PDF' });
+    }
+});
+
 app.get('/download/pdf/:filename', async (req, res) => {
     try {
+        await ensureDatabaseConnection();
         const safe = path.basename(req.params.filename);
         const base = path.resolve(pdfsDir);
         const filePath = path.resolve(base, safe);
         if (!filePath.startsWith(`${base}${path.sep}`)) {
             return res.status(400).json({ message: 'Invalid file' });
         }
-        await fs.promises.access(filePath);
-        return res.download(filePath, safe);
+        try {
+            await fs.promises.access(filePath);
+            return res.download(filePath, safe);
+        } catch {
+            const streamed = await streamGridFSFile(safe, res, { download: true });
+            if (streamed) {
+                return;
+            }
+        }
+        return res.status(404).json({ message: 'PDF not found' });
     } catch {
         return res.status(404).json({ message: 'PDF not found' });
     }
@@ -364,9 +452,11 @@ app.delete('/api/books/:id', async (req, res) => {
 
         if (deleted.photo) {
             fs.unlink(path.join(photosDir, deleted.photo), () => {});
+            await deleteGridFSFile(deleted.photo);
         }
         if (deleted.pdf) {
             fs.unlink(path.join(pdfsDir, deleted.pdf), () => {});
+            await deleteGridFSFile(deleted.pdf);
         }
 
         return res.status(200).json({ message: 'Book deleted', id: req.params.id });
@@ -403,11 +493,17 @@ async function startServer() {
         await ensureDefaultAdminCredential();
         console.log('Connected to MongoDB');
 
-        app.listen(3001, () => {
-            console.log('Server running on http://localhost:3001');        });
+        const port = process.env.PORT || 3001;
+        app.listen(port, () => {
+            console.log(`Server running on http://localhost:${port}`);
+        });
     } catch (err) {
         console.error('MongoDB connection failed:', err.message);
     }
 }
 
-startServer();
+if (require.main === module) {
+    startServer();
+}
+
+module.exports = app;

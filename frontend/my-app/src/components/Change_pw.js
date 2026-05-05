@@ -1,4 +1,5 @@
 import React, { useState } from 'react'
+import { apiUrl } from '../api';
 
 export default function Change_pw({handleClose}) {
   const [oldPassword, setOldPassword] = useState('');
@@ -14,7 +15,7 @@ export default function Change_pw({handleClose}) {
     setError('');
 
     try {
-      const response = await fetch('http://localhost:3001/api/auth/change-password', {
+      const response = await fetch(apiUrl('/api/auth/change-password'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
