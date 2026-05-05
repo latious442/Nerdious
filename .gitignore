@@ -1,0 +1,7 @@
+frontend/my-app/node_modules/
+frontend/my-app/build/
+frontend/my-app/coverage/
+frontend/my-app/.env.local
+frontend/my-app/.env.development.local
+frontend/my-app/.env.test.local
+frontend/my-app/.env.production.local
