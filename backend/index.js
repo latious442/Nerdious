@@ -200,17 +200,19 @@ mongoose.connection.on('error', (err) => {
     console.error('MongoDB runtime error:', err.message);
 });
 
+app.get('/api/health', (_req, res) => {
+    return res.json({ ok: true });
+});
+
 app.set('view engine','ejs');
 app.set('views', path.join(__dirname, 'views'));
-app.get('/',async(req,res)=>{
-    try {
-        await ensureDatabaseConnection();
-        const book = await Book.find().sort({ createdAt: -1 });
-        return res.render('index', { book });
-    } catch (err) {
-        console.error('Failed to fetch books:', err.message);
-        res.status(500).send('Failed to load data');
-    }
+app.get('/', (_req, res) => {
+    return res.json({
+        ok: true,
+        service: 'Nerdious backend',
+        health: '/api/health',
+        books: '/api/books',
+    });
 });
 
 app.get('/api/books', async (req, res) => {
