@@ -19,10 +19,6 @@ const SESSION_COOKIE_NAME = 'admin_session';
 const SESSION_TTL_MS = 8 * 60 * 60 * 1000;
 const isProduction = process.env.NODE_ENV === 'production';
 
-const photosDir = path.join(__dirname, 'public', 'photos');
-const pdfsDir = path.join(__dirname, 'public', 'pdfs');
-fs.mkdirSync(photosDir, { recursive: true });
-fs.mkdirSync(pdfsDir, { recursive: true });
 
 const maxImageBytes = 5 * 1024 * 1024;
 const maxPdfBytes = 40 * 1024 * 1024;
@@ -193,8 +189,6 @@ async function ensureDefaultAdminCredential() {
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 app.use(cors({ origin: clientOrigin, credentials: true }));
-app.use('/photos', express.static(photosDir));
-app.use('/pdfs', express.static(pdfsDir));
 
 mongoose.connection.on('error', (err) => {
     console.error('MongoDB runtime error:', err.message);
