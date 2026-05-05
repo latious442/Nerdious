@@ -1,4 +1,8 @@
 {
+  "main": "backend/index.js",
+  "scripts": {
+    "start": "node backend/index.js"
+  },
   "dependencies": {
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",
