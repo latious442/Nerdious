@@ -12,7 +12,15 @@ const AdminSession = require('./models/AdminSession');
 const { ALLOWED_TAGS } = require('./constants/tags');
 const app = express();
 const mongoUrl = process.env.MONGO_URI;
-const clientOrigin = process.env.CLIENT_ORIGIN || 'http://localhost:3000';
+const defaultClientOrigins = [
+    'http://localhost:3000',
+    'https://nerdious-fe.vercel.app',
+];
+const clientOrigins = (process.env.CLIENT_ORIGINS || process.env.CLIENT_ORIGIN || '')
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+const allowedOrigins = new Set(clientOrigins.length > 0 ? clientOrigins : defaultClientOrigins);
 const DEFAULT_ADMIN_NAME = 'mma';
 const DEFAULT_ADMIN_PASSWORD = '123';
 const SESSION_COOKIE_NAME = 'admin_session';
@@ -188,7 +196,15 @@ async function ensureDefaultAdminCredential() {
 
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
-app.use(cors({ origin: clientOrigin, credentials: true }));
+app.use(cors({
+    origin(origin, callback) {
+        if (!origin || allowedOrigins.has(origin)) {
+            return callback(null, true);
+        }
+        return callback(new Error(`Origin ${origin} is not allowed by CORS`));
+    },
+    credentials: true,
+}));
 
 mongoose.connection.on('error', (err) => {
     console.error('MongoDB runtime error:', err.message);
