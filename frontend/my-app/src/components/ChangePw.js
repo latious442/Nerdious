@@ -1,7 +1,7 @@
 import React, { useState } from 'react'
 import { apiUrl } from '../api';
 
-export default function Change_pw({handleClose}) {
+export default function ChangePw({ handleClose }) {
   const [oldPassword, setOldPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [message, setMessage] = useState('');

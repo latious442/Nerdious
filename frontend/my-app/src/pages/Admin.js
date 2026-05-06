@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
-import Adding_post from "../components/Adding_post";
+import AddingPost from "../components/AddingPost";
 import { tagLabel } from "../bookTags";
-import Change_pw from "../components/Change_pw";
+import ChangePw from "../components/ChangePw";
 import { useNavigate } from "react-router-dom";
 import { apiUrl } from "../api";
 const PAGE_SIZE = 8;
@@ -137,7 +137,7 @@ export default function Admin() {
       <div className="container py-4">
         <div className="d-flex justify-content-center align-items-center gap-3 flex-wrap">
           <div style={glassBoxStyle}>
-            <h2 className="text-primary"><i class="bi bi-plus"></i></h2>
+            <h2 className="text-primary"><i className="bi bi-plus"></i></h2>
             <button
               type="button"
               className="btn btn-primary btn-lg px-4 py-2"
@@ -148,7 +148,7 @@ export default function Admin() {
           </div>
           <div style={glassBoxStyle}>
             <h2 className="text-primary">
-              <i class="bi bi-lock"></i>
+              <i className="bi bi-lock"></i>
             </h2>
             <button
               type="button"
@@ -159,12 +159,12 @@ export default function Admin() {
             </button>
           </div>
         </div>
-        {power && <Adding_post onSuccess={refetchBooks} handleClose={handleClose} />}
-        {pw_power && <Change_pw handleClose={handleClose} />}
+        {power && <AddingPost onSuccess={refetchBooks} handleClose={handleClose} />}
+        {pw_power && <ChangePw handleClose={handleClose} />}
       </div>
       
       <div className="container">
-        <h1>Book List<i class="bi bi-book"></i></h1>
+        <h1>Book List<i className="bi bi-book"></i></h1>
         {loading && <p className="text-center">Loading books…</p>}
         {!loading && error && (
           <p className="text-center text-danger">Failed to fetch books: {error}</p>

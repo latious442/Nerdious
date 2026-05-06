@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { TAG_FORM_OPTIONS } from '../bookTags';
 import { apiUrl } from '../api';
 
-export default function Adding_post({ onSuccess ,handleClose}) {
+export default function AddingPost({ onSuccess, handleClose }) {
   const [form, setForm] = useState({
     author: '',
     title: '',
